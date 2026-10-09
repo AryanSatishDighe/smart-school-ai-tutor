@@ -36,7 +36,7 @@ if not api_key:
 client = genai.Client(api_key=api_key)
 
 # Change this if the model is not available for your API key.
-MODEL_NAME = "gemini-3.8-flash"
+MODEL_NAME = "gemini-3.5-flash"
 
 # -------------------- Sidebar settings --------------------
 with st.sidebar:
