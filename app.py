@@ -1,9 +1,9 @@
 
 import streamlit as st
-import google.generativeai as genai
+from google import genai
 
 # -----------------------------
-# Page configuration
+# Page setup
 # -----------------------------
 st.set_page_config(
     page_title="Smart School AI Tutor",
@@ -14,39 +14,38 @@ st.set_page_config(
 MODEL_NAME = "gemini-3.5-flash-lite"
 
 # -----------------------------
-# Read API key securely
+# Secure API key
 # -----------------------------
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
 except Exception:
     st.error(
         "Gemini API key not found. "
-        "Please add GEMINI_API_KEY to Streamlit Secrets."
+        "Please add GEMINI_API_KEY in Streamlit Secrets."
     )
     st.stop()
 
-genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel(MODEL_NAME)
+client = genai.Client(api_key=API_KEY)
 
 # -----------------------------
-# App heading
+# Heading
 # -----------------------------
 st.title("🎓 Smart School AI Tutor")
 st.caption("Your friendly learning assistant for Classes 5–10")
 
 st.info(
-    "Choose your class, subject, and language. "
-    "Then ask a question to learn step by step."
+    "Choose your class, subject, and language, "
+    "then ask your question."
 )
 
 # -----------------------------
-# Student settings
+# Learning preferences
 # -----------------------------
 col1, col2 = st.columns(2)
 
 with col1:
     student_class = st.selectbox(
-        "📚 Select your class",
+        "📚 Choose your class",
         [
             "Class 5",
             "Class 6",
@@ -60,54 +59,47 @@ with col1:
 
 with col2:
     subject = st.selectbox(
-        "📖 Select your subject",
+        "📖 Choose your subject",
         [
             "Mathematics",
             "Science",
             "English",
             "Social Studies",
         ],
-        index=0,
     )
 
 language = st.selectbox(
-    "🌐 Response language",
+    "🌐 Answer language",
     ["English", "Hindi", "Marathi"],
-    index=0,
 )
 
 st.divider()
 
 # -----------------------------
-# Keep chat history in session
+# Chat history
 # -----------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Clear chat when the student changes learning settings
-current_settings = (student_class, subject, language)
+settings = (student_class, subject, language)
 
-if "previous_settings" not in st.session_state:
-    st.session_state.previous_settings = current_settings
-elif st.session_state.previous_settings != current_settings:
+if "last_settings" not in st.session_state:
+    st.session_state.last_settings = settings
+elif st.session_state.last_settings != settings:
     st.session_state.messages = []
-    st.session_state.previous_settings = current_settings
+    st.session_state.last_settings = settings
     st.rerun()
 
-# Display previous messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
 # -----------------------------
-# Student question input
+# Ask the tutor
 # -----------------------------
-question = st.chat_input(
-    f"Ask your {subject} question here..."
-)
+question = st.chat_input("Type your question here...")
 
 if question:
-    # Display and save the student's question
     st.session_state.messages.append(
         {"role": "user", "content": question}
     )
@@ -115,58 +107,56 @@ if question:
     with st.chat_message("user"):
         st.markdown(question)
 
-    # Instructions tailored to the student's selections
-    tutor_instructions = f"""
-You are Smart School AI Tutor, a patient and encouraging school tutor.
+    instructions = f"""
+You are Smart School AI Tutor, a friendly and patient school tutor.
 
 Student class: {student_class}
 Subject: {subject}
-Required response language: {language}
+Answer language: {language}
 
-Teaching rules:
-1. Explain at the student's school level.
-2. Use simple, age-appropriate language.
-3. Solve problems step by step and show the working.
-4. Explain why each step is taken.
-5. Use familiar examples when helpful.
-6. For maths, check the answer when possible.
-7. For science, explain concepts accurately with examples.
-8. For English, help with grammar, vocabulary, reading, and writing.
-9. For Social Studies, explain historical, geographical, and civic
-   concepts clearly.
-10. If a question is unclear, ask a short clarifying question.
-11. Encourage learning instead of just giving unexplained answers.
-12. Reply in {language}.
-13. Be respectful, safe, and supportive of school-age learners.
-
-Answer the student's latest question.
+Teaching guidelines:
+- Use simple language suitable for the student's class.
+- Explain answers step by step.
+- Show calculations clearly for mathematics.
+- Explain science concepts with familiar examples.
+- Help with grammar, vocabulary, reading, and writing in English.
+- Explain Social Studies clearly and accurately.
+- Check calculations when possible.
+- Encourage understanding, not just memorization.
+- If the question is unclear, ask a brief follow-up question.
+- Respond in {language}.
+- Be respectful and suitable for school-age learners.
 """
 
-    # Build conversation context from recent messages
     recent_messages = st.session_state.messages[-10:]
 
-    conversation = []
-    for message in recent_messages:
-        role = "Student" if message["role"] == "user" else "Tutor"
-        conversation.append(f"{role}: {message['content']}")
+    conversation = "\n\n".join(
+        (
+            "Student: " if message["role"] == "user" else "Tutor: "
+        ) + message["content"]
+        for message in recent_messages
+    )
 
-    full_prompt = (
-        tutor_instructions
-        + "\nConversation:\n"
-        + "\n\n".join(conversation)
+    prompt = (
+        instructions
+        + "\nConversation so far:\n"
+        + conversation
         + "\n\nTutor:"
     )
 
-    # Ask Gemini
     with st.chat_message("assistant"):
         with st.spinner("Your tutor is thinking..."):
             try:
-                response = model.generate_content(full_prompt)
+                response = client.models.generate_content(
+                    model=MODEL_NAME,
+                    contents=prompt,
+                )
+
                 answer = response.text
 
                 if not answer:
                     answer = (
-                        "I couldn't create an answer this time. "
+                        "I couldn't generate an answer. "
                         "Please try asking in a different way."
                     )
 
@@ -178,10 +168,9 @@ Answer the student's latest question.
 
             except Exception as error:
                 st.error(
-                    "The tutor couldn't answer just now. "
-                    "Please wait a little and try again."
+                    "The tutor couldn't answer right now. "
+                    "Please wait a moment and try again."
                 )
-                # Technical details can help with troubleshooting.
                 st.caption(f"Technical details: {error}")
 
 # -----------------------------
@@ -190,5 +179,5 @@ Answer the student's latest question.
 st.divider()
 st.caption(
     "Smart School AI Tutor • Learn step by step • "
-    "Always check important answers with your teacher or textbook."
+    "Check important answers with your teacher or textbook."
 )
